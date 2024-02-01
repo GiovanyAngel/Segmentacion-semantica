@@ -19,8 +19,10 @@ model.eval()
 # Transformaciones para preprocesar la imagen
 transform = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((513, 513)),
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
     transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
 # Ahora abrir el video con OpenCV
@@ -35,6 +37,8 @@ cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
     print("Error al abrir el video. Verifica la ruta y el formato del video.")
+
+cv2.namedWindow('segmentation', cv2.WINDOW_FULLSCREEN)
     
 # Ciclo while para realizar el análisis del video que se ha abierto
 while cap.isOpened():
@@ -42,41 +46,35 @@ while cap.isOpened():
     if not ret:
         break
     
-    # Preprocesamiento del frame para que coincida con las expectativas del modelo
+    # Preprocesamiento del frame p                                                                                                                                                              ara que coincida con las expectativas del modelo
     input_tensor = transform(frame).unsqueeze(0)
     
     # Realizamos la segmentación
     with torch.no_grad():
         output = model(input_tensor)['out'][0]
+        
+        
+    probs = torch.nn.functional.softmax(output, dim=0)
+    predicted_class = torch.argmax(probs, dim=0).byte().cpu().numpy()
     
     # Obtenemos la máscara de la segmentación
-    mask = output.argmax(0).byte().cpu().numpy()
-    
-    # Imprimir información para depuración
-    # print("Input Tensor Shape:", input_tensor.shape)
-    # print("Output Shape:", output.shape)
-    # print("Mask Shape:", mask.shape)
+    mask = cv2.resize(predicted_class, (frame.shape[1], frame.shape[0]))
     
     # Aplicar un umbral para resaltar la segmentación
     threshold = 128
     mask = (mask > threshold).astype(np.uint8) * 255
-    mask = cv2.resize(mask, (frame.shape[1], frame.shape[0]))
-    mask = mask.astype(np.uint8)
     
     # Aplicamos la máscara al frame original
     segmented_frame = cv2.bitwise_and(frame, frame, mask=mask)
-    
-    # Imprimir información adicional para depuración
-    # print("Segmentacion aplicada")
-    
-    # Mostramos el frame segmentado
-    cv2.imshow('segmentation', segmented_frame)
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame_rgb = cv2.resize(frame_rgb, (1920, 1080))
+    cv2.imshow('original', frame_rgb)
     
     # Esperar 1 milisegundo y verificar si se presiona la tecla 'q'
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
     
-    cv2.waitKey(30)
+    cv2.waitKey(15)
 
 cap.release()
 cv2.destroyAllWindows()
